@@ -4,19 +4,16 @@ class ADVect():
     def __init__(self, data, _children = []):
         data            = data if isinstance(data, np.ndarray) else np.array(data)
         self.data       = data 
-        self.grad       = np.zeros_like(self.data)
-        self._children  = set(_children)
+        self.grad       = np.zeros_like(self.data) 
+        self._children  = set(_children) 
         self._backward  = lambda: None 
     
     def __add__(self, other):
         other           = other if isinstance(other, ADVect) else ADVect(other)
         out             = ADVect(self.data+ other.data, [self, other])
         def _backward():
-            if self == other:
-                self.grad   = other.grad + out.grad
-            else:
-                self.grad   = self.grad + out.grad
-                other.grad  = other.grad + out.grad
+            self.grad   = self.grad + out.grad
+            other.grad  = other.grad + out.grad
         out._backward   = _backward
         return out
     
@@ -24,11 +21,8 @@ class ADVect():
         other           = other if isinstance(other, ADVect) else ADVect(other)
         out             = ADVect(self.data+ other.data, [self, other])
         def _backward():
-            if self == other:
-                self.grad   = other.grad + out.grad
-            else:
-                self.grad   = self.grad + out.grad
-                other.grad  = other.grad - out.grad
+            self.grad   = self.grad + out.grad
+            other.grad  = other.grad - out.grad
         out._backward   = _backward
         return out
 
@@ -56,7 +50,7 @@ class ADVect():
         out = ADVect(self.data * other.data, [self, other])
         def _backward():
             self.grad   = self.grad + other.data * out.grad
-            other.grad  = other.grad + self.data @ out.grad # I'm just gna pretend like this is the answer, the real answer should be [1xn]
+            other.grad  = other.grad + self.data * out.grad # I'm just gna pretend like this is the answer, the real answer should be [1xn]
         out._backward = _backward
         return out
     
@@ -70,7 +64,15 @@ class ADVect():
         return out
 
     def __truediv__(self, other): # assuming other is a scalar
+        assert other != 0,  "don't divide by zero, stupid"
         return self * (other ** -1)
+
+    def __neg__(self):
+        out = ADVect(-self.data, [self])
+        def _backward():
+            self.grad = self.grad - 1 * out.grad
+        out._backward = _backward
+        return out
 
     def sum(self):
         out = ADVect(np.sum(self.data), [self])
@@ -80,10 +82,11 @@ class ADVect():
         return out
     
     def log(self):
-        out = ADVect(np.sum(self.data), [self])
+        out = ADVect(np.log(self.data + 1e-10), [self])
         def _backward():
-            self.grad = self.grad + (self.data ** -1) * out.grad 
+            self.grad = self.grad + (self.data.astype(float) + 1e-10) ** -1. * out.grad 
         out._backward = _backward
+        return out
 
     def relu(self):
         ReLU = np.vectorize(lambda x: max(0, x))
@@ -93,6 +96,16 @@ class ADVect():
         out._backward = _backward
         return out
 
+    def softmax(self):
+        shiftx = self.data - np.max(self.data) # somewhat cheating but subtraction doesn't change the gradient
+        exps = np.exp(shiftx.data)
+        sum_exps = np.sum(exps)
+        out = ADVect(exps / sum_exps, [self])
+        def _backward():
+            softmax_grad = out.data * (np.eye(len(self.data)) - out.data)
+            self.grad = self.grad + softmax_grad @ out.grad
+        out._backward = _backward
+        return out
 
     def backward(self):
         topo, visited = [], set() 
@@ -129,7 +142,7 @@ class Module():
 class Layer(Module):
     def __init__(self, nin, nout, nonlin=True):
         self.w = ADVect(np.random.normal(size=(nout, nin)))
-        self.b = ADVect(np.random.normal(size=nout))
+        self.b = ADVect(np.zeros_like(np.arange(nout)))
         self.nonlin = nonlin
 
     def __call__(self, x):

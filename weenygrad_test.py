@@ -84,12 +84,27 @@ def test_division():
     assert np.allclose(cwg.data, cpt.data.numpy())
     assert np.allclose(awg.grad, apt.grad.numpy())
 
+def test_log():
+    a = ADVect(np.arange(1, 11))  # start from 1 to avoid log(0)
+    c = a.log()
+    c = c.sum()
+    c.backward()
+    awg, cwg = a, c
+
+    a = torch.Tensor(np.arange(1, 11))  # start from 1 to avoid log(0)
+    a.requires_grad = True
+    c = torch.log(a)
+    c = c.sum() 
+    c.backward()
+    apt, cpt = a, c
+    assert np.allclose(cwg.data, cpt.data.numpy())
+    assert np.allclose(awg.grad, apt.grad.numpy())
+
 def test_sanity(DEBUG=False):
     x = ADVect([-4.0])
     z = [2.0] @ x + [2.0] + x
     q = z.relu() + z @ x
     h = (z @ z).relu()
-    #y = h + q + q @ x
     y = q @ x
     y.backward()
     xwg, ywg = x, y
@@ -99,7 +114,6 @@ def test_sanity(DEBUG=False):
     z = (torch.Tensor([2.0]) @ x )+ torch.Tensor([2.0]) + x
     q = z.relu() + z @ x
     h = (z @ z).relu()
-    #y = h + q + q @ x
     y = q @ x
     y.backward()
     xpt, ypt = x, y
@@ -113,6 +127,8 @@ def test_sanity(DEBUG=False):
 if __name__ == '__main__':
     test_addition()
     test_multiplication()
+    test_log()
     test_division()
     test_matrix_vector_multiply()
     test_sanity() 
+    

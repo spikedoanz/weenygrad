@@ -2,35 +2,21 @@ import numpy as np
 from weenygrad import ADVect
 import torch
 
-def test_ops():
-    a = ADVect(np.arange(3))
-    b = ADVect(np.arange(3)+3)
-    c = ADVect(np.arange(3)+6)
-    d = ADVect(np.arange(1)+6)
+def test_addition():
+    a = ADVect(np.arange(10))
+    b = ADVect(np.arange(10)-14)
+    c = a + b + b
+    c.backward()
+    awg, cwg = a, c
 
-    e = c @ b
-    f = e + d
-    g = f.relu()
-    g.grad = 1
+    a = torch.Tensor(np.arange(10))
+    a.requires_grad = True
+    b = torch.Tensor(np.arange(10)-14)
+    c = a + b + b
+    apt, cpt = a, c
+    assert cwg.data == cpt.data.item()
+    assert awg.grad == apt.grad.item()
 
-    g._backward()
-    f._backward()
-    d._backward()
-    e._backward()
-    for v in [g,f,d,e,c,b]:
-        print(v)
-
-def test_backward():
-    a = ADVect(np.arange(3))
-    b = ADVect(np.arange(3)+3)
-    c = ADVect(np.arange(3)+6)
-    d = ADVect(np.arange(1)+6)
-    e = c @ b
-    f = e + d
-    g = f.relu()
-    g.backward()
-    for v in [g,f,d,e,c,b]:
-        print(v)
 
 def test_matrix_vector_multiply():
     A = np.arange(6)
@@ -38,22 +24,25 @@ def test_matrix_vector_multiply():
     b = ADVect(np.arange(2)+6)
     c = A @ b
     c.backward()
-    Awg, cwg = A, c 
+    d = c.sum()
+    Awg, dwg = A, d
 
     A = np.arange(6)
     A = A.reshape(3,2)
     A = torch.Tensor(A)
+    A.requires_grad = True
     b = torch.Tensor(np.arange(2)+6)
     c = A @ b
-    c.backward()
-    Apt, cpt = A, c
+    d = c.sum()
+    d.backward()
+    Apt, dpt = A, d
 
     # forward pass is correct
-    assert cwg.data == cpt.data.item()
+    assert dwg.data == dpt.data.item()
     # backward pass is correct
-    assert Awg.grad == Apt.grad.item()
+    assert np.allclose(Awg.grad, Apt.grad.numpy())
 
-def test_sanity():
+def test_sanity(DEBUG=False):
     x = ADVect([-4.0])
     z = [2.0] @ x + [2.0] + x
     q = z.relu() + z @ x
@@ -72,12 +61,14 @@ def test_sanity():
     y = q @ x
     y.backward()
     xpt, ypt = x, y
+    if DEBUG:
+        print(xwg.grad)
+        print(xpt.grad.item())
 
-    # forward pass is correct
     assert ywg.data == ypt.data.item()
-    # backward pass is correct
     assert xwg.grad == xpt.grad.item()
 
 if __name__ == '__main__':
-    test_sanity()
-    #test_matrix_vector_multiply()
+    test_addition
+    test_matrix_vector_multiply()
+    test_sanity() 

@@ -1,24 +1,37 @@
 import numpy as np
 
 class ADVect():
-    def __init__(self, data, children = []):
-        data = data if isinstance(data, np.ndarray) else np.array(data)
-        self.data =data 
-        self.grad = np.zeros_like(self.data)
-        self.children = set(children)
-        self._backward = lambda: None 
+    def __init__(self, data, _children = []):
+        data            = data if isinstance(data, np.ndarray) else np.array(data)
+        self.data       = data 
+        self.grad       = np.zeros_like(self.data)
+        self._children  = set(_children)
+        self._backward  = lambda: None 
     
     def __add__(self, other):
-        other = other if isinstance(other, ADVect) else ADVect(other)
-        out = ADVect(self.data+ other.data, [self, other])
-        def backward():
+        other           = other if isinstance(other, ADVect) else ADVect(other)
+        out             = ADVect(self.data+ other.data, [self, other])
+        def _backward():
             if self == other:
-                self.grad = other.grad + out.grad
+                self.grad   = other.grad + out.grad
             else:
-                self.grad = self.grad + out.grad
-                other.grad = other.grad + out.grad
-        out._backward = backward
+                self.grad   = self.grad + out.grad
+                other.grad  = other.grad + out.grad
+        out._backward   = _backward
         return out
+    
+    def __sub__(self, other):
+        other           = other if isinstance(other, ADVect) else ADVect(other)
+        out             = ADVect(self.data+ other.data, [self, other])
+        def _backward():
+            if self == other:
+                self.grad   = other.grad + out.grad
+            else:
+                self.grad   = self.grad + out.grad
+                other.grad  = other.grad - out.grad
+        out._backward   = _backward
+        return out
+
 
     def __matmul__(self, other):
         other = other if isinstance(other, ADVect) else ADVect(other)
@@ -26,45 +39,46 @@ class ADVect():
             out = ADVect(self.data * other.data, [self, other]) 
         else: 
             out = ADVect(self.data @ other.data, [self, other]) 
-        def backward():
+
+        def _backward():
             if np.ndim(self.data) == 1:
-                self.grad   = self.grad +   out.grad * other.data
-                other.grad  = other.grad +  out.grad * self.data
+                self.grad   = self.grad + out.grad * other.data
+                other.grad  = other.grad + out.grad * self.data
             else: # Matrix vector mulitplication is supported, not matrix @ matrix
-                self.grad = self.grad + np.outer(out.grad, other.data) 
-                other.grad = other.grad + np.transpose(self.data) @ out.grad
-        out._backward = backward
+                self.grad   = self.grad + np.outer(out.grad, other.data) 
+                other.grad  = other.grad + np.transpose(self.data) @ out.grad
+
+        out._backward = _backward
         return out
 
     def sum(self):
         out = ADVect(np.sum(self.data), [self])
-        def backward():
+        def _backward():
             self.grad = np.ones_like(self.grad)*out.grad
-        out._backward = backward   
+        out._backward = _backward   
         return out
 
     def relu(self):
         ReLU = np.vectorize(lambda x: max(0, x))
         out = ADVect(ReLU(self.data), [self])
-        def backward():
-            self.grad = self.grad + (out.data >= 0) * out.grad
-        out._backward = backward
+        def _backward():
+            self.grad = self.grad + (out.data > 0) * out.grad
+        out._backward = _backward
         return out
 
     def backward(self):
-        topo, visited = [], []
+        topo, visited = [], set() 
         def build_topo(v):
             if v not in visited:
+                visited.add(v)
+                for child in v._children:
+                    build_topo(child)
                 topo.append(v)
-                visited.append(v)
-                for node in v.children:
-                    build_topo(node)
-                return topo
-            return []
-        self.grad = np.ones_like(self.data)
         build_topo(self)
-        for v in topo:
+        self.grad = np.ones_like(self.data)
+        for v in reversed(topo):
             v._backward()
+
 
     def __radd__(self, other):
         return self + other
@@ -73,7 +87,7 @@ class ADVect():
         return self @ other
     
     def __repr__(self):
-        return f'data:\n{self.data},\n grad: {self.grad}'
+        return f'data:\n{self.data},\n grad: {self.grad}\n'
 
 class Module():
     def params(self):

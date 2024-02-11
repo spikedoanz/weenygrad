@@ -1,82 +1,113 @@
 import numpy as np
 
 class ADVect():
-    def __init__(self, value, children = ()):
-        self.value = value
-        self.grad = np.zeros_like(self.value)
-        self.children = children
+    def __init__(self, data, children = []):
+        data = data if isinstance(data, np.ndarray) else np.array(data)
+        self.data =data 
+        self.grad = np.zeros_like(self.data)
+        self.children = set(children)
         self._backward = lambda: None 
     
     def __add__(self, other):
-        out = ADVect(self.value + other.value, [self, other])
+        other = other if isinstance(other, ADVect) else ADVect(other)
+        out = ADVect(self.data+ other.data, [self, other])
         def backward():
-            self.grad += out.grad
-            other.grad += out.grad
+            if self == other:
+                self.grad = other.grad + out.grad
+            else:
+                self.grad = self.grad + out.grad
+                other.grad = other.grad + out.grad
         out._backward = backward
         return out
-    
+
     def __matmul__(self, other):
-        out = ADVect(self.value @ other.value, [self, other])
+        other = other if isinstance(other, ADVect) else ADVect(other)
+        if self.data.ndim == 1 and other.data.ndim == 1:
+            out = ADVect(self.data * other.data, [self, other]) 
+        else: 
+            out = ADVect(self.data @ other.data, [self, other]) 
         def backward():
-            self.grad += other.value * out.grad
-            other.grad += self.value * out.grad
+            if np.ndim(self.data) == 1:
+                self.grad   = self.grad +   out.grad * other.data
+                other.grad  = other.grad +  out.grad * self.data
+            else: # Matrix vector mulitplication is supported, not matrix @ matrix
+                self.grad = self.grad + np.outer(out.grad, other.data) 
+                other.grad = other.grad + np.transpose(self.data) @ out.grad
         out._backward = backward
+        return out
+
+    def sum(self):
+        out = ADVect(np.sum(self.data), [self])
+        def backward():
+            self.grad = np.ones_like(self.grad)*out.grad
+        out._backward = backward   
         return out
 
     def relu(self):
         ReLU = np.vectorize(lambda x: max(0, x))
-        out = ADVect(ReLU(self.value), [self])
+        out = ADVect(ReLU(self.data), [self])
         def backward():
-            ReLU_diff = np.vectorize(lambda x: 0 if x < 0 else 1)
-            self.grad += ReLU_diff(out.grad)
+            self.grad = self.grad + (out.data >= 0) * out.grad
         out._backward = backward
         return out
 
     def backward(self):
-        topo = []
-        visited = set() 
+        topo, visited = [], []
         def build_topo(v):
-            if self not in visited:
+            if v not in visited:
                 topo.append(v)
-                visited.add(v)
+                visited.append(v)
                 for node in v.children:
                     build_topo(node)
                 return topo
             return []
+        self.grad = np.ones_like(self.data)
         build_topo(self)
-        self.grad = np.ones_like(self.value)
         for v in topo:
-            print(v)
             v._backward()
+
+    def __radd__(self, other):
+        return self + other
+
+    def __rmatmul__(self, other): 
+        return self @ other
     
     def __repr__(self):
-        return f'{self.value}, grad: {self.grad}'
+        return f'data:\n{self.data},\n grad: {self.grad}'
 
 class Module():
     def params(self):
         return []
     def zero_grad(self):
         for v in self.params():
-            v.grad = np.zeros_like(v.value)
+            v.grad = np.zeros_like(v.data)
         
-class Neuron(Module):
-    def __init__(self, nin):
-        self.w = ADVect(np.random.normal(size=nin))
-        self.b = ADVect(np.random.normal(size=1))
+class Layer(Module):
+    def __init__(self, nin, nout, nonlin=True):
+        self.w = ADVect(np.random.normal(size=(nout, nin)))
+        self.b = ADVect(np.random.normal(size=nout))
+        self.nonlin = nonlin
+
+    def __call__(self, x):
+        out1 = self.w @ x
+        out2 = out1 + self.b
+        out3 = out2.relu() if self.nonlin else out2
+        return out3
+    
+    def params(self):
+        return [self.w, self.b]
+
+class MLP(Module):
+    def __init__(self, sz):
+        self.layers = [Layer(sz[i], sz[i+1], nonlin = i != len(sz)-2) for i in range(len(sz)-1)] 
     
     def __call__(self,x):
-        out1 = self.w @ x
-        out2 = out1 + self.b 
-        out3 = out2.relu()
-        return out3
-
-if __name__ == '__main__':
-
-    a = Neuron(10)
-    b = ADVect(np.arange(10))
-    c = a(b)
-    c.backward()
-    print(c)
-    print(a.w)
-    print(a.b)
-
+        for layer in self.layers:
+            x = layer(x)
+        return x
+    
+    def params(self):
+        ret = []
+        for _ in self.layers:
+            ret.extend(_.params())
+        return ret

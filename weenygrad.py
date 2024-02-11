@@ -50,6 +50,27 @@ class ADVect():
 
         out._backward = _backward
         return out
+    
+    def __mul__(self, other): # assuming other is a scalar, this implementation is a bit iffy
+        other = other if isinstance(other, ADVect) else ADVect(other)
+        out = ADVect(self.data * other.data, [self, other])
+        def _backward():
+            self.grad   = self.grad + other.data * out.grad
+            other.grad  = other.grad + self.data @ out.grad # I'm just gna pretend like this is the answer, the real answer should be [1xn]
+        out._backward = _backward
+        return out
+    
+    def __pow__(self, other):
+        other = other if isinstance(other, ADVect) else ADVect(other)
+        out = ADVect(self.data ** other.data, [self, other])
+        def _backward():
+            self.grad = self.grad + other.data * self.data ** (other.data - 1) * out.grad
+            other.grad = other.grad + self.data ** other.data * np.log(self.data) * out.grad
+        out._backward = _backward
+        return out
+
+    def __truediv__(self, other): # assuming other is a scalar
+        return self * (other ** -1)
 
     def sum(self):
         out = ADVect(np.sum(self.data), [self])
@@ -57,6 +78,12 @@ class ADVect():
             self.grad = np.ones_like(self.grad)*out.grad
         out._backward = _backward   
         return out
+    
+    def log(self):
+        out = ADVect(np.sum(self.data), [self])
+        def _backward():
+            self.grad = self.grad + (self.data ** -1) * out.grad 
+        out._backward = _backward
 
     def relu(self):
         ReLU = np.vectorize(lambda x: max(0, x))
@@ -65,6 +92,7 @@ class ADVect():
             self.grad = self.grad + (out.data > 0) * out.grad
         out._backward = _backward
         return out
+
 
     def backward(self):
         topo, visited = [], set() 
@@ -79,10 +107,12 @@ class ADVect():
         for v in reversed(topo):
             v._backward()
 
+    def __rmul__(self, other):
+        return self * other
 
     def __radd__(self, other):
         return self + other
-
+    
     def __rmatmul__(self, other): 
         return self @ other
     

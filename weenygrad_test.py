@@ -6,6 +6,7 @@ def test_addition():
     a = ADVect(np.arange(10))
     b = ADVect(np.arange(10)-14)
     c = a + b + b
+    c = c.sum()
     c.backward()
     awg, cwg = a, c
 
@@ -13,9 +14,31 @@ def test_addition():
     a.requires_grad = True
     b = torch.Tensor(np.arange(10)-14)
     c = a + b + b
+    c = c.sum()
+    c.backward()
     apt, cpt = a, c
-    assert cwg.data == cpt.data.item()
-    assert awg.grad == apt.grad.item()
+    assert np.allclose(cwg.data, cpt.data.numpy())
+    assert np.allclose(awg.grad, apt.grad.numpy())
+
+
+def test_multiplication():
+    a = ADVect(np.arange(1, 11))  # start from 1 to avoid zero multiplication
+    b = ADVect(np.arange(11, 21))
+    c = a * b
+    c = c.sum()
+    c.backward()
+    awg, cwg = a, c
+
+    a = torch.Tensor(np.arange(1, 11))  # start from 1 to avoid zero multiplication
+    a.requires_grad = True
+    b = torch.Tensor(np.arange(11, 21))
+    c = a * b
+    c = c.sum()
+    c.backward()
+    apt, cpt = a, c
+
+    assert np.allclose(cwg.data, cpt.data.numpy())
+    assert np.allclose(awg.grad, apt.grad.numpy())
 
 
 def test_matrix_vector_multiply():
@@ -41,6 +64,25 @@ def test_matrix_vector_multiply():
     assert dwg.data == dpt.data.item()
     # backward pass is correct
     assert np.allclose(Awg.grad, Apt.grad.numpy())
+
+def test_division():
+    a = ADVect(np.arange(1, 11))  # start from 1 to avoid zero division
+    b = 3
+    c = a / b
+    c.backward()
+    c = c.sum()
+    awg, cwg = a, c
+
+    a = torch.Tensor(np.arange(1, 11))  # start from 1 to avoid zero division
+    a.requires_grad = True
+    b = 3
+    c = a / b
+    c = c.sum()
+    c.backward()
+    apt, cpt = a, c
+
+    assert np.allclose(cwg.data, cpt.data.numpy())
+    assert np.allclose(awg.grad, apt.grad.numpy())
 
 def test_sanity(DEBUG=False):
     x = ADVect([-4.0])
@@ -69,6 +111,8 @@ def test_sanity(DEBUG=False):
     assert xwg.grad == xpt.grad.item()
 
 if __name__ == '__main__':
-    test_addition
+    test_addition()
+    test_multiplication()
+    test_division()
     test_matrix_vector_multiply()
     test_sanity() 
